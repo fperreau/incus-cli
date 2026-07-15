@@ -1,0 +1,26 @@
+---
+# Dependances pour le module incus_cli
+# Ce fichier liste les collections et roles Ansible requis
+
+# Pour ce projet, le module est implemente comme un module standalone
+# et ne requiert pas de collections externes.
+# Cependant, pour une utilisation en production, il est recommande de
+# le transformer en collection Ansible.
+
+# Collections (aucune dependance externe pour le module standalone)
+collections: []
+
+# Roles (aucune dependance externe)
+roles: []
+
+# Modules (aucune dependance externe)
+# Le module incus_cli est fournis localement dans ./library/
+
+# Pour utiliser ce module, configurez ansible.cfg avec :
+# [defaults]
+# library = ./library
+# action_plugins = ./action_plugins
+
+# Dependances Python (a installer avec pip)
+# - pyyaml (pour le parsing YAML)
+# - jinja2 (pour le rendu des templates)
