@@ -1,0 +1,12 @@
+.venv
+.ansible
+.config
+*.pyc
+*.iso
+*.zip
+*.tgz
+*.log
+img
+build
+output-*
+packer_cache
