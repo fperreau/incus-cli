@@ -1,0 +1,31 @@
+---
+# Création de l'environnement de test
+
+- name: Create
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    # Créer le répertoire pour les tests
+    - name: Créer le répertoire de test
+      file:
+        path: /tmp/incus_cli_test
+        state: directory
+        mode: '0755'
+    
+    # Copier le faux binaire incus
+    - name: Copier le faux binaire incus
+      copy:
+        src: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/tests/integration/fake_incus.py"
+        dest: /usr/local/bin/incus
+        mode: '0755'
+    
+    # S'assurer que le faux binaire est dans le PATH
+    - name: Vérifier que incus est dans le PATH
+      command: which incus
+      register: which_result
+      changed_when: false
+      
+    - name: Afficher le chemin de incus
+      debug:
+        var: which_result.stdout

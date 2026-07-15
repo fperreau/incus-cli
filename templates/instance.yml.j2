@@ -1,0 +1,16 @@
+# Template pour démarrer/arrêter des instances Incus
+# Variables disponibles:
+#   - name: Nom de l'instance
+#   - state: Etat souhaité (started, stopped)
+#   - remote: Remote Incus
+#   - project: Projet Incus
+
+incus:
+  - name: "{{ 'Démarrer' if state == 'started' else 'Arrêter' }} {{ name }}"
+    argv:
+      - "{{ 'start' if state == 'started' else 'stop' }}"
+      - "{{ remote }}:{{ name }}"
+      - --project
+      - "{{ project }}"
+    changed: {{ state == 'started' }}
+    environment: {}

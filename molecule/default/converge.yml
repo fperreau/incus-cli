@@ -1,0 +1,176 @@
+---
+# Test de convergence avec le module incus_cli
+
+- name: Converge
+  hosts: all
+  gather_facts: false
+  tasks:
+    # Tester le mode command
+    - name: Tester le mode command - démarrer une instance
+      incus_cli:
+        command: "incus start web01"
+      register: result_command_start
+      
+    - name: Vérifier le résultat du mode command (start)
+      assert:
+        that:
+          - result_command_start.changed == true
+          - result_command_start.mode == "command"
+          - result_command_start.failed == false
+          - result_command_start.results[0].rc == 0
+          - result_command_start.results[0].skipped == false
+          - "Starting instance" in result_command_start.results[0].stdout
+      
+    - name: Tester le mode command - commande invalide (shell operator)
+      incus_cli:
+        command: "incus list | grep web01"
+      register: result_command_invalid
+      ignore_errors: yes
+      
+    - name: Vérifier que la commande invalide échoue
+      assert:
+        that:
+          - result_command_invalid.failed == true
+      
+    # Tester le mode incus
+    - name: Tester le mode incus - démarrer puis arrêter
+      incus_cli:
+        incus:
+          - name: Démarrer web01
+            argv:
+              - start
+              - web01
+          - name: Arrêter web01
+            argv:
+              - stop
+              - web01
+      register: result_incus
+      
+    - name: Vérifier le résultat du mode incus
+      assert:
+        that:
+          - result_incus.changed == true
+          - result_incus.mode == "incus"
+          - result_incus.failed == false
+          - result_incus.results | length == 2
+          - result_incus.results[0].name == "Démarrer web01"
+          - result_incus.results[1].name == "Arrêter web01"
+          - result_incus.results[0].argv[0] == "incus"
+          - result_incus.results[0].argv[1] == "start"
+          - result_incus.results[0].argv[2] == "web01"
+      
+    # Tester le mode incus avec normalisation (incus déjà présent)
+    - name: Tester la normalisation - incus déjà présent
+      incus_cli:
+        incus:
+          - argv:
+              - incus
+              - start
+              - web02
+      register: result_normalize
+      
+    - name: Vérifier la normalisation
+      assert:
+        that:
+          - result_normalize.changed == true
+          - result_normalize.results[0].argv[0] == "incus"
+          - result_normalize.results[0].argv[1] == "start"
+          - result_normalize.results[0].argv[2] == "web02"
+          - result_normalize.warnings | length > 0
+      
+    # Tester stop_on_error
+    - name: Tester stop_on_error = false
+      incus_cli:
+        incus:
+          - argv:
+              - start
+              - nonexistent
+          - argv:
+              - stop
+              - web01
+        stop_on_error: false
+      register: result_stop_on_error
+      ignore_errors: yes
+      
+    - name: Vérifier que les deux étapes ont été exécutées
+      assert:
+        that:
+          - result_stop_on_error.results | length == 2
+      
+    # Tester creates/removes
+    - name: Tester creates - fichier existe
+      incus_cli:
+        incus:
+          - argv:
+              - start
+              - web03
+            creates: /tmp/incus_cli_test
+      register: result_creates
+      
+    - name: Vérifier que l'étape a été ignorée (creates existe)
+      assert:
+        that:
+          - result_creates.results[0].skipped == true
+          - result_creates.results[0].changed == false
+          - "exists" in result_creates.results[0].skip_reason
+    
+    # Tester removes
+    - name: Tester removes - fichier n'existe pas
+      incus_cli:
+        incus:
+          - argv:
+              - stop
+              - web04
+            removes: /tmp/nonexistent_file_12345.txt
+      register: result_removes
+      
+    - name: Vérifier que l'étape a été ignorée (removes n'existe pas)
+      assert:
+        that:
+          - result_removes.results[0].skipped == true
+          - result_removes.results[0].changed == false
+          - "does not exist" in result_removes.results[0].skip_reason
+      
+    # Tester le mode shell avec consentement explicite
+    - name: Tester le mode shell avec redirection
+      incus_cli:
+        shell: "incus list --format json > /tmp/incus_list_test.json"
+        unsafe_shell: true
+      register: result_shell
+      
+    - name: Vérifier le résultat du mode shell
+      assert:
+        that:
+          - result_shell.changed == true
+          - result_shell.mode == "shell"
+          - result_shell.failed == false
+      
+    # Tester le mode shell sans consentement (doit échouer)
+    - name: Tester le mode shell sans unsafe_shell
+      incus_cli:
+        shell: "incus list"
+      register: result_shell_no_consent
+      ignore_errors: yes
+      
+    - name: Vérifier que le mode shell sans consentement échoue
+      assert:
+        that:
+          - result_shell_no_consent.failed == true
+      
+    # Tester check_mode
+    - name: Tester check_mode
+      incus_cli:
+        incus:
+          - argv:
+              - start
+              - web05
+        stop_on_error: true
+      check_mode: true
+      register: result_check_mode
+      
+    - name: Vérifier le résultat en check_mode
+      assert:
+        that:
+          - result_check_mode.changed == false
+          - result_check_mode.results[0].skipped == true
+          - "check_mode" in result_check_mode.results[0].skip_reason

@@ -1,0 +1,53 @@
+---
+# Préparation de l'environnement de test
+
+- name: Prepare
+  hosts: all
+  gather_facts: false
+  tasks:
+    # Installer les dépendances nécessaires
+    - name: Installer Python3 et pip
+      apt:
+        name:
+          - python3
+          - python3-pip
+          - python3-yaml
+          - python3-jinja2
+        state: present
+      when: ansible_os_family == 'Debian'
+      become: true
+    
+    - name: Installer les dépendances Python
+      pip:
+        name:
+          - pyyaml
+          - jinja2
+        executable: pip3
+      become: true
+    
+    # Créer un utilisateur pour les tests (optionnel)
+    - name: Créer un utilisateur de test
+      user:
+        name: testuser
+        state: present
+        system: yes
+      become: true
+    
+    # Créer le répertoire pour les templates de test
+    - name: Créer le répertoire des templates
+      file:
+        path: /tmp/templates
+        state: directory
+        mode: '0755'
+    
+    # Créer un template de test
+    - name: Créer un template de test
+      copy:
+        content: |
+          incus:
+            - name: "Start {{ name }}"
+              argv:
+                - start
+                - "{{ name }}"
+              changed: true
+        dest: /tmp/templates/test_instance.yml.j2

@@ -1,0 +1,27 @@
+---
+# Nettoyage après les tests
+
+- name: Destroy
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Supprimer le faux binaire incus
+      file:
+        path: /usr/local/bin/incus
+        state: absent
+    
+    - name: Supprimer le répertoire de test
+      file:
+        path: /tmp/incus_cli_test
+        state: absent
+    
+    - name: Supprimer le fichier de log
+      file:
+        path: /tmp/fake_incus_calls.jsonl
+        state: absent
+    
+    - name: Supprimer le fichier JSON de test
+      file:
+        path: /tmp/incus_list_test.json
+        state: absent

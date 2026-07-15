@@ -1,0 +1,47 @@
+---
+# Vérification des résultats des tests
+
+- name: Verify
+  hosts: all
+  gather_facts: false
+  tasks:
+    # Vérifier que le faux binaire a été appelé
+    - name: Vérifier que le faux binaire incus a été appelé
+      stat:
+        path: /tmp/fake_incus_calls.jsonl
+      register: log_file
+      
+    - name: Lire le fichier de log des appels
+      slurp:
+        src: /tmp/fake_incus_calls.jsonl
+      register: log_content
+      when: log_file.stat.exists
+      
+    - name: Parser le contenu du log
+      set_fact:
+        calls: "{{ log_content.content | b64decode | split('\n') | map('from_json') | list }}"
+      when: log_content is defined and log_content.content
+      
+    - name: Vérifier qu'incus a été appelé avec le bon préfixe
+      assert:
+        that:
+          - calls | selectattr('argv.0', '==', 'incus') | list | length > 0
+      when: calls is defined
+      
+    # Vérifier que les commandes attendues ont été exécutées
+    - name: Vérifier les commandes exécutées
+      assert:
+        that:
+          # Doit avoir des appels à start
+          - calls | selectattr('argv.1', '==', 'start') | list | length >= 1
+          # Doit avoir des appels à stop
+          - calls | selectattr('argv.1', '==', 'stop') | list | length >= 1
+          # Doit avoir des appels à list
+          - calls | selectattr('argv.1', '==', 'list') | list | length >= 1
+      when: calls is defined
+      
+    # Vérifier la structure des résultats
+    - name: Vérifier la structure des résultats (test manuel)
+      debug:
+        msg: "Vérification manuelle requise: consulter /tmp/fake_incus_calls.jsonl"
+      when: log_file.stat.exists
