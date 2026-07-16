@@ -60,7 +60,7 @@
       incus_cli:
         template: templates/instance.yml.j2
         variables:
-          name: web01
+          name: web02
           state: started
           remote: prod
           project: production

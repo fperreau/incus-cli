@@ -1,7 +1,0 @@
-- name: "Creer {{ name | default('web01') }}"
-  argv: ["launch", "images:ubuntu/22.04", "{{ name | default('web01') }}"]
-  changed: true
-
-- name: "Demarrer {{ name | default('web01') }}"
-  argv: ["start", "{{ name | default('web01') }}"]
-  changed: true
