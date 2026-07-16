@@ -11,11 +11,16 @@
         command: "incus start web01"
       register: result_command
       ignore_errors: yes
-    
+  
     - name: Afficher le résultat du mode command
       debug:
         var: result_command
     
+    - name: Arrêter une instance avec le mode rapide
+      incus_cli:
+        command: "incus stop web01"
+      ignore_errors: yes
+
     # Test du mode incus
     - name: Démarrer puis arrêter une instance avec le mode robuste
       incus_cli:

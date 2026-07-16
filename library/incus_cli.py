@@ -271,14 +271,26 @@ import json
 import shlex
 import traceback
 
-try:
-    from ansible.module_utils.basic import AnsibleModule
-    from ansible.module_utils._text import to_text, to_native
-except ImportError:
-    from ansible.module_utils.basic import AnsibleModule
-    HAS_ANSIBLE = True
-else:
-    HAS_ANSIBLE = True
+from ansible.module_utils.basic import AnsibleModule
+
+# Fonction de compatibilité pour remplacer to_text déprécié
+def to_text(text, errors='surrogate_or_replace'):
+    """Convertir bytes ou str en str (compatible Python 2/3)
+    
+    Supports Ansible's custom error handlers:
+    - 'surrogate_or_replace': uses 'surrogateescape' if available, else 'replace'
+    """
+    if not isinstance(text, bytes):
+        return str(text)
+    
+    # Handle Ansible's custom error handler
+    if errors == 'surrogate_or_replace':
+        try:
+            return text.decode('utf-8', 'surrogateescape')
+        except (LookupError, TypeError):
+            errors = 'replace'
+    
+    return text.decode('utf-8', errors)
 
 # Importer les utilitaires locaux
 try:
@@ -739,7 +751,6 @@ def run_module():
     
     # Initialiser les résultats
     results = []
-    warnings = []
     overall_changed = False
     overall_failed = False
     mode = None
@@ -801,7 +812,7 @@ def run_module():
             
             # Vérifier les doublons
             if step.get("argv") and len(step["argv"]) > 0 and step["argv"][0] == INCUS_BINARY:
-                warnings.append(f"Duplicate 'incus' prefix found in step {i} argv[0], normalized to single instance")
+                module.warn(f"Duplicate 'incus' prefix found in step {i} argv[0], normalized to single instance")
     
     elif module.params.get("template") is not None:
         mode = "template"
@@ -839,12 +850,13 @@ def run_module():
         module.fail_json(msg="One of 'command', 'incus', 'template', or 'shell' is required", changed=False)
     
     # Construire le résultat
+    # Dans Ansible 2.23+, le paramètre warnings à exit_json est déprécié
+    # Les warnings sont maintenant affichés via module.warn() pendant l'exécution
     module.exit_json(
         changed=overall_changed,
         failed=overall_failed,
         mode=mode,
-        results=results,
-        warnings=warnings
+        results=results
     )
 
 

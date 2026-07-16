@@ -1,7 +1,7 @@
 .venv
 .ansible
 .config
-__pycache__/*.pyc
+*.pyc
 *.iso
 *.zip
 *.tgz
