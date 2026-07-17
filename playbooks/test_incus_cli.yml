@@ -58,7 +58,7 @@
     # Note: Cela nécessitera que l'action plugin soit correctement configuré
     - name: Exécuter un scénario depuis un template
       incus_cli:
-        template: templates/instance.yml.j2
+        template: ../templates/instance.yml.j2
         variables:
           name: web02
           state: started
