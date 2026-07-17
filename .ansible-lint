@@ -1,0 +1,7 @@
+---
+warn_list:
+  - experimental
+  - fqcn[action-core]
+  - fqcn[action]
+  - fqcn
+  - yaml[line-length]
