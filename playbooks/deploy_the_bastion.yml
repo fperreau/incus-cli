@@ -1,0 +1,430 @@
+---
+# Playbook: Deploy The Bastion container using incus_cli module
+# Description: Deploys a The Bastion container from Docker image with proper configuration
+# Documentation: https://ovh.github.io/the-bastion/index.html
+
+- name: Deploy The Bastion container with Incus
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  
+  vars:
+    # Container configuration
+    container_name: the_bastion
+    container_image: docker:the-bastion/the-bastion:latest
+    
+    # Storage configuration
+    storage_pool: default
+    data_volume: bastion_data
+    logs_volume: bastion_logs
+    backup_volume: bastion_backup
+    
+    # Network configuration
+    network_name: bastion_net
+    network_type: bridge
+    network_ipv4: 192.168.1.100/24
+    network_gateway: 192.168.1.1
+    
+    # Resource limits
+    cpu_limit: 2
+    memory_limit: 2GiB
+    disk_limit: 10GiB
+    
+    # The Bastion specific configuration
+    bastion_admin_user: bastion-admin
+    bastion_ssh_port: 2222
+    bastion_data_dir: /var/lib/bastion
+    bastion_logs_dir: /var/log/bastion
+    bastion_backup_dir: /var/backups/bastion
+    
+    # Security settings
+    bastion_ssh_key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
+    
+  tasks:
+    - name: Ensure storage pool exists
+      my_namespace.incus.incus_cli:
+        incus:
+          - argv:
+              - storage
+              - list
+              - "{{ storage_pool }}"
+            changed: false
+            name: Check if storage pool exists
+      register: storage_check
+      ignore_errors: true
+      
+    - name: Create storage pool if it doesn't exist
+      my_namespace.incus.incus_cli:
+        incus:
+          - argv:
+              - storage
+              - create
+              - "{{ storage_pool }}"
+              - dir
+              - size=100GiB
+      when: storage_check.failed or storage_check.stdout == ""
+      
+    - name: Create data volume for The Bastion
+      my_namespace.incus.incus_cli:
+        incus:
+          - argv:
+              - storage
+              - volume
+              - create
+              - "{{ storage_pool }}"
+              - "{{ data_volume }}"
+              - --type
+              - filesystem
+              - size=5GiB
+      
+    - name: Create logs volume for The Bastion
+      my_namespace.incus.incus_cli:
+        incus:
+          - argv:
+              - storage
+              - volume
+              - create
+              - "{{ storage_pool }}"
+              - "{{ logs_volume }}"
+              - --type
+              - filesystem
+              - size=2GiB
+      
+    - name: Create backup volume for The Bastion
+      my_namespace.incus.incus_cli:
+        incus:
+          - argv:
+              - storage
+              - volume
+              - create
+              - "{{ storage_pool }}"
+              - "{{ backup_volume }}"
+              - --type
+              - filesystem
+              - size=3GiB
+      
+    - name: Ensure network exists
+      my_namespace.incus.incus_cli:
+        incus:
+          - argv:
+              - network
+              - list
+              - "{{ network_name }}"
+            changed: false
+            name: Check if network exists
+      register: network_check
+      ignore_errors: true
+      
+    - name: Create network for The Bastion
+      my_namespace.incus.incus_cli:
+        incus:
+          - argv:
+              - network
+              - create
+              - "{{ network_name }}"
+              - --type
+              - "{{ network_type }}"
+              - ipv4.address="{{ network_ipv4 }}"
+              - ipv4.gateway="{{ network_gateway }}"
+              - dns.domain=bastion.local
+      when: network_check.failed or network_check.stdout == ""
+      
+    - name: Pull The Bastion Docker image
+      my_namespace.incus.incus_cli:
+        incus:
+          - argv:
+              - image
+              - copy
+              - "{{ container_image }}"
+              - local:
+            name: Pull The Bastion image
+      
+    - name: Check if The Bastion container already exists
+      my_namespace.incus.incus_cli:
+        incus:
+          - argv:
+              - list
+              - "{{ container_name }}"
+            changed: false
+            name: Check container existence
+      register: container_check
+      ignore_errors: true
+      
+    - name: Create and start The Bastion container
+      my_namespace.incus.incus_cli:
+        incus:
+          - argv:
+              - launch
+              - "{{ container_image }}"
+              - "{{ container_name }}"
+              - --profile
+              - default
+              - --storage
+              - "{{ storage_pool }}"
+              - -c
+              - "limits.cpu={{ cpu_limit }}"
+              - -c
+              - "limits.memory={{ memory_limit }}"
+              - -c
+              - "limits.disk={{ disk_limit }}"
+              - -d
+              - "root,size=10GiB"
+              - -n
+              - "{{ network_name }}"
+              - --eth0
+              - "ipv4.address={{ network_ipv4.split('/')[0] }}"
+            name: Launch The Bastion container
+      when: container_check.failed or container_check.stdout == ""
+      
+    - name: Attach data volume to container
+      my_namespace.incus.incus_cli:
+        incus:
+          - argv:
+              - storage
+              - volume
+              - attach
+              - "{{ storage_pool }}"
+              - "{{ data_volume }}"
+              - "{{ container_name }}"
+              - "{{ bastion_data_dir }}"
+            name: Attach data volume
+      
+    - name: Attach logs volume to container
+      my_namespace.incus.incus_cli:
+        incus:
+          - argv:
+              - storage
+              - volume
+              - attach
+              - "{{ storage_pool }}"
+              - "{{ logs_volume }}"
+              - "{{ container_name }}"
+              - "{{ bastion_logs_dir }}"
+            name: Attach logs volume
+      
+    - name: Attach backup volume to container
+      my_namespace.incus.incus_cli:
+        incus:
+          - argv:
+              - storage
+              - volume
+              - attach
+              - "{{ storage_pool }}"
+              - "{{ backup_volume }}"
+              - "{{ container_name }}"
+              - "{{ bastion_backup_dir }}"
+            name: Attach backup volume
+      
+    - name: Configure container for The Bastion
+      my_namespace.incus.incus_cli:
+        incus:
+          - argv:
+              - config
+              - set
+              - "{{ container_name }}"
+              - "user.networks.eth0.host_name={{ container_name }}"
+            name: Set hostname
+          
+          - argv:
+              - config
+              - set
+              - "{{ container_name }}"
+              - "user.mounts={{ bastion_data_dir }}:{{ data_volume }}"
+            name: Configure data mount
+          
+          - argv:
+              - config
+              - set
+              - "{{ container_name }}"
+              - "user.mounts={{ bastion_logs_dir }}:{{ logs_volume }}"
+            name: Configure logs mount
+          
+          - argv:
+              - config
+              - set
+              - "{{ container_name }}"
+              - "user.mounts={{ bastion_backup_dir }}:{{ backup_volume }}"
+            name: Configure backup mount
+      
+    - name: Set resource limits on container
+      my_namespace.incus.incus_cli:
+        incus:
+          - argv:
+              - config
+              - set
+              - "{{ container_name }}"
+              - "limits.cpu={{ cpu_limit }}"
+            name: Set CPU limit
+          
+          - argv:
+              - config
+              - set
+              - "{{ container_name }}"
+              - "limits.memory={{ memory_limit }}"
+            name: Set memory limit
+          
+          - argv:
+              - config
+              - set
+              - "{{ container_name }}"
+              - "limits.disk={{ disk_limit }}"
+            name: Set disk limit
+      
+    - name: Configure SSH access to The Bastion
+      my_namespace.incus.incus_cli:
+        incus:
+          - argv:
+              - config
+              - device
+              - add
+              - "{{ container_name }}"
+              - ssh
+              - proxy
+              - listen=tcp:0.0.0.0:{{ bastion_ssh_port }}
+              - connect=tcp:127.0.0.1:22
+            name: Configure SSH proxy
+      
+    - name: Start The Bastion container
+      my_namespace.incus.incus_cli:
+        incus:
+          - argv:
+              - start
+              - "{{ container_name }}"
+            name: Start container
+      
+    - name: Wait for container to be running
+      my_namespace.incus.incus_cli:
+        incus:
+          - argv:
+              - wait
+              - "{{ container_name }}"
+              - --condition
+              - running
+              - --timeout
+              - "30"
+            name: Wait for running state
+            changed: false
+      
+    - name: Verify container is running
+      my_namespace.incus.incus_cli:
+        incus:
+          - argv:
+              - list
+              - "{{ container_name }}"
+              - --format
+              - json
+            changed: false
+            name: Verify container status
+      register: container_status
+      
+    - name: Display container information
+      ansible.builtin.debug:
+        var: container_status
+        verbosity: 1
+      
+    - name: Configure The Bastion application (initial setup)
+      my_namespace.incus.incus_cli:
+        incus:
+          - argv:
+              - exec
+              - "{{ container_name }}"
+              - --
+              - bash
+              - -c
+              - "echo 'Configuring The Bastion...'"
+            name: Initial configuration
+      
+    - name: Set up The Bastion admin user
+      my_namespace.incus.incus_cli:
+        incus:
+          - argv:
+              - exec
+              - "{{ container_name }}"
+              - --
+              - bash
+              - -c
+              - "id {{ bastion_admin_user }} || useradd -m -s /bin/bash {{ bastion_admin_user }}"
+            name: Create admin user
+      
+    - name: Configure SSH key for admin user
+      my_namespace.incus.incus_cli:
+        incus:
+          - argv:
+              - exec
+              - "{{ container_name }}"
+              - --
+              - bash
+              - -c
+              - "mkdir -p /home/{{ bastion_admin_user }}/.ssh && echo '{{ bastion_ssh_key }}' > /home/{{ bastion_admin_user }}/.ssh/authorized_keys && chown -R {{ bastion_admin_user }}:{{ bastion_admin_user }} /home/{{ bastion_admin_user }}/.ssh && chmod 700 /home/{{ bastion_admin_user }}/.ssh && chmod 600 /home/{{ bastion_admin_user }}/.ssh/authorized_keys"
+            name: Configure SSH key
+      
+    - name: Install The Bastion dependencies
+      my_namespace.incus.incus_cli:
+        incus:
+          - argv:
+              - exec
+              - "{{ container_name }}"
+              - --
+              - bash
+              - -c
+              - "apt-get update && apt-get install -y git perl openssh-server sudo"
+            name: Install dependencies
+      
+    - name: Clone The Bastion repository
+      my_namespace.incus.incus_cli:
+        incus:
+          - argv:
+              - exec
+              - "{{ container_name }}"
+              - --
+              - bash
+              - -c
+              - "git clone https://github.com/ovh/the-bastion.git /opt/the-bastion"
+            name: Clone repository
+      
+    - name: Install The Bastion
+      my_namespace.incus.incus_cli:
+        incus:
+          - argv:
+              - exec
+              - "{{ container_name }}"
+              - --
+              - bash
+              - -c
+              - "cd /opt/the-bastion && ./install --install-dir=/usr/local/bastion --user={{ bastion_admin_user }} --group={{ bastion_admin_user }} --no-interactive"
+            name: Install The Bastion
+      
+    - name: Configure The Bastion
+      my_namespace.incus.incus_cli:
+        incus:
+          - argv:
+              - exec
+              - "{{ container_name }}"
+              - --
+              - bash
+              - -c
+              - "cd /opt/the-bastion && ./configure --bastion-user={{ bastion_admin_user }} --bastion-group={{ bastion_admin_user }} --data-dir={{ bastion_data_dir }} --logs-dir={{ bastion_logs_dir }} --backup-dir={{ bastion_backup_dir }} --no-interactive"
+            name: Configure The Bastion
+      
+    - name: Restart container to apply all configurations
+      my_namespace.incus.incus_cli:
+        incus:
+          - argv:
+              - restart
+              - "{{ container_name }}"
+            name: Restart container
+      
+    - name: Final verification - Check container status
+      my_namespace.incus.incus_cli:
+        incus:
+          - argv:
+              - info
+              - "{{ container_name }}"
+            changed: false
+            name: Final container info
+      register: final_status
+      
+    - name: Display final container information
+      ansible.builtin.debug:
+        var: final_status
+        verbosity: 0

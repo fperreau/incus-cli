@@ -1,0 +1,250 @@
+---
+# Integration tests for The Bastion deployment using incus_cli module
+# These tests verify the complete workflow of deploying a The Bastion container
+
+- name: Integration tests for The Bastion deployment
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  
+  vars:
+    # Test configuration
+    test_container_name: "test_bastion_{{ ansible_date_time.iso8601_basic_short }}"
+    test_storage_pool: "test_pool"
+    test_network_name: "test_net"
+    test_image: "docker:the-bastion/the-bastion:latest"
+    
+    # Expected results
+    expected_container_status: "Running"
+    expected_volumes:
+      - "test_data_{{ ansible_date_time.iso8601_basic_short }}"
+      - "test_logs_{{ ansible_date_time.iso8601_basic_short }}"
+      - "test_backup_{{ ansible_date_time.iso8601_basic_short }}"
+    
+  tasks:
+    - name: Include deployment playbook variables
+      ansible.builtin.include_vars:
+        file: "../../playbooks/deploy_the_bastion.yml"
+      ignore_errors: true
+      
+    - name: Test 1 - Verify module exists and is accessible
+      ansible.builtin.command: python3 -c "import sys; sys.path.insert(0, '../../library'); import incus_cli; print('Module imported successfully')"
+      register: module_import_test
+      changed_when: false
+      
+    - name: Assert module import was successful
+      ansible.builtin.assert:
+        that:
+          - module_import_test.stdout is defined
+          - "'Module imported successfully' in module_import_test.stdout"
+        fail_msg: "Failed to import incus_cli module"
+      
+    - name: Test 2 - Test command mode with simple Incus command
+      my_namespace.incus.incus_cli:
+        command: "incus version"
+      register: version_test
+      ignore_errors: true
+      
+    - name: Assert version command result
+      ansible.builtin.assert:
+        that:
+          - version_test is defined
+          - version_test.mode == "command"
+          - version_test.changed == true or version_test.changed == false
+        fail_msg: "Command mode test failed"
+      when: version_test is defined
+      
+    - name: Test 3 - Test incus mode with argv
+      my_namespace.incus.incus_cli:
+        incus:
+          - argv:
+              - list
+              - --format
+              - json
+            name: List containers
+            changed: false
+      register: list_test
+      ignore_errors: true
+      
+    - name: Assert list command result
+      ansible.builtin.assert:
+        that:
+          - list_test is defined
+          - list_test.mode == "incus"
+          - list_test.results is defined
+          - list_test.results | length > 0
+          - list_test.results[0].argv[0] == "incus"
+          - list_test.results[0].argv[1] == "list"
+        fail_msg: "Incus mode test failed"
+      when: list_test is defined
+      
+    - name: Test 4 - Test template mode
+      my_namespace.incus.incus_cli:
+        template: "../../templates/bastion_container.yml.j2"
+        variables:
+          container_name: "{{ test_container_name }}"
+          container_image: "{{ test_image }}"
+          storage_pool: "{{ test_storage_pool }}"
+          data_volume: "test_data_{{ ansible_date_time.iso8601_basic_short }}"
+          logs_volume: "test_logs_{{ ansible_date_time.iso8601_basic_short }}"
+          backup_volume: "test_backup_{{ ansible_date_time.iso8601_basic_short }}"
+          network_name: "{{ test_network_name }}"
+          cpu_limit: "1"
+          memory_limit: "1GiB"
+          disk_limit: "5GiB"
+      register: template_test
+      ignore_errors: true
+      
+    - name: Assert template mode result
+      ansible.builtin.assert:
+        that:
+          - template_test is defined
+          - template_test.mode == "template"
+          - template_test.results is defined
+          - template_test.results | length > 0
+        fail_msg: "Template mode test failed"
+      when: template_test is defined
+      
+    - name: Test 5 - Test shell mode (should fail without unsafe_shell)
+      my_namespace.incus.incus_cli:
+        shell: "incus list"
+      register: shell_test_no_consent
+      ignore_errors: true
+      
+    - name: Assert shell mode fails without consent
+      ansible.builtin.assert:
+        that:
+          - shell_test_no_consent is failed
+        fail_msg: "Shell mode should fail without unsafe_shell=true"
+      when: shell_test_no_consent is defined
+      
+    - name: Test 6 - Test shell mode with consent
+      my_namespace.incus.incus_cli:
+        shell: "incus list --format json"
+        unsafe_shell: true
+      register: shell_test_with_consent
+      ignore_errors: true
+      
+    - name: Assert shell mode result
+      ansible.builtin.assert:
+        that:
+          - shell_test_with_consent is defined
+          - shell_test_with_consent.mode == "shell"
+          - shell_test_with_consent.changed == true or shell_test_with_consent.changed == false
+        fail_msg: "Shell mode test failed"
+      when: shell_test_with_consent is defined
+      
+    - name: Test 7 - Test idempotency with creates
+      my_namespace.incus.incus_cli:
+        incus:
+          - argv:
+              - start
+              - "{{ test_container_name }}"
+            creates: "/tmp/{{ test_container_name }}_started"
+            changed: false
+      register: idempotency_test
+      ignore_errors: true
+      
+    - name: Create marker file for idempotency test
+      ansible.builtin.file:
+        path: "/tmp/{{ test_container_name }}_started"
+        state: touch
+      
+    - name: Test 8 - Run idempotency test again (should skip)
+      my_namespace.incus.incus_cli:
+        incus:
+          - argv:
+              - start
+              - "{{ test_container_name }}"
+            creates: "/tmp/{{ test_container_name }}_started"
+            changed: false
+      register: idempotency_test_2
+      
+    - name: Assert idempotency test was skipped
+      ansible.builtin.assert:
+        that:
+          - idempotency_test_2 is defined
+          - idempotency_test_2.changed == false
+          - idempotency_test_2.results[0].skipped == true
+        fail_msg: "Idempotency test failed - command was not skipped"
+      when: idempotency_test_2 is defined
+      
+    - name: Test 9 - Test check_mode
+      my_namespace.incus.incus_cli:
+        incus:
+          - argv:
+              - start
+              - "{{ test_container_name }}"
+      check_mode: true
+      register: check_mode_test
+      
+    - name: Assert check_mode result
+      ansible.builtin.assert:
+        that:
+          - check_mode_test is defined
+          - check_mode_test.changed == true
+          - check_mode_test.results[0].skipped == true
+          - check_mode_test.results[0].skip_reason == "check_mode"
+        fail_msg: "Check mode test failed"
+      when: check_mode_test is defined
+      
+    - name: Test 10 - Test error handling with stop_on_error
+      my_namespace.incus.incus_cli:
+        incus:
+          - argv:
+              - list
+              - "nonexistent_container_12345"
+          - argv:
+              - start
+              - "another_container"
+        stop_on_error: true
+      register: error_handling_test
+      ignore_errors: true
+      
+    - name: Assert error handling result
+      ansible.builtin.assert:
+        that:
+          - error_handling_test is defined
+          - error_handling_test.results is defined
+          - error_handling_test.results | length == 2
+        fail_msg: "Error handling test failed"
+      when: error_handling_test is defined
+      
+    - name: Test 11 - Test sensitive value masking
+      my_namespace.incus.incus_cli:
+        incus:
+          - argv:
+              - exec
+              - "{{ test_container_name }}"
+              - --
+              - echo
+              - "password=secret123"
+            sensitive_values:
+              - "secret123"
+      register: sensitive_test
+      ignore_errors: true
+      
+    - name: Assert sensitive values are masked
+      ansible.builtin.assert:
+        that:
+          - sensitive_test is defined
+          - sensitive_test.results is defined
+          - sensitive_test.results | length > 0
+          - "'secret123' not in sensitive_test.results[0].stdout"
+        fail_msg: "Sensitive value masking test failed"
+      when: sensitive_test is defined and sensitive_test.results[0].stdout is defined
+      
+    - name: Display test summary
+      ansible.builtin.debug:
+        msg: |
+          Integration Test Summary:
+          - Module Import: {{ "PASS" if module_import_test is success else "FAIL" }}
+          - Command Mode: {{ "PASS" if version_test is success else "FAIL" }}
+          - Incus Mode: {{ "PASS" if list_test is success else "FAIL" }}
+          - Template Mode: {{ "PASS" if template_test is success else "FAIL" }}
+          - Shell Mode (no consent): {{ "PASS" if shell_test_no_consent is failed else "FAIL" }}
+          - Shell Mode (with consent): {{ "PASS" if shell_test_with_consent is success else "FAIL" }}
+          - Idempotency: {{ "PASS" if idempotency_test_2 is success and idempotency_test_2.changed == false else "FAIL" }}
+          - Check Mode: {{ "PASS" if check_mode_test is success else "FAIL" }}
+          - Error Handling: {{ "PASS" if error_handling_test is success else "FAIL" }}
+          - Sensitive Masking: {{ "PASS" if sensitive_test is success else "FAIL" }}

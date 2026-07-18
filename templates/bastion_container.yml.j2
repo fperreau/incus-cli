@@ -1,0 +1,173 @@
+---
+# Jinja2 template for The Bastion container deployment
+# This template generates Incus commands to deploy a The Bastion container
+
+incus:
+  # Create storage volumes
+  - argv:
+      - storage
+      - volume
+      - create
+      - "{{ storage_pool }}"
+      - "{{ data_volume }}"
+      - --type
+      - filesystem
+      - size={{ data_volume_size | default('5GiB') }}
+    name: Create data volume
+    changed: true
+
+  - argv:
+      - storage
+      - volume
+      - create
+      - "{{ storage_pool }}"
+      - "{{ logs_volume }}"
+      - --type
+      - filesystem
+      - size={{ logs_volume_size | default('2GiB') }}
+    name: Create logs volume
+    changed: true
+
+  - argv:
+      - storage
+      - volume
+      - create
+      - "{{ storage_pool }}"
+      - "{{ backup_volume }}"
+      - --type
+      - filesystem
+      - size={{ backup_volume_size | default('3GiB') }}
+    name: Create backup volume
+    changed: true
+
+  # Create network if needed
+  - argv:
+      - network
+      - create
+      - "{{ network_name }}"
+      - --type
+      - "{{ network_type | default('bridge') }}"
+      - ipv4.address="{{ network_ipv4 | default('192.168.1.100/24') }}"
+      - ipv4.gateway="{{ network_gateway | default('192.168.1.1') }}"
+      - dns.domain={{ dns_domain | default('bastion.local') }}
+    name: Create network
+    changed: true
+    creates: /tmp/{{ network_name }}_created
+
+  # Launch container from Docker image
+  - argv:
+      - launch
+      - "{{ container_image | default('docker:the-bastion/the-bastion:latest') }}"
+      - "{{ container_name | default('the_bastion') }}"
+      - --profile
+      - default
+      - --storage
+      - "{{ storage_pool }}"
+      - -c
+      - "limits.cpu={{ cpu_limit | default('2') }}"
+      - -c
+      - "limits.memory={{ memory_limit | default('2GiB') }}"
+      - -d
+      - "root,size={{ root_disk_size | default('10GiB') }}"
+      - -n
+      - "{{ network_name }}"
+    name: Launch container
+    changed: true
+
+  # Attach volumes to container
+  - argv:
+      - storage
+      - volume
+      - attach
+      - "{{ storage_pool }}"
+      - "{{ data_volume }}"
+      - "{{ container_name | default('the_bastion') }}"
+      - "{{ bastion_data_dir | default('/var/lib/bastion') }}"
+    name: Attach data volume
+    changed: true
+
+  - argv:
+      - storage
+      - volume
+      - attach
+      - "{{ storage_pool }}"
+      - "{{ logs_volume }}"
+      - "{{ container_name | default('the_bastion') }}"
+      - "{{ bastion_logs_dir | default('/var/log/bastion') }}"
+    name: Attach logs volume
+    changed: true
+
+  - argv:
+      - storage
+      - volume
+      - attach
+      - "{{ storage_pool }}"
+      - "{{ backup_volume }}"
+      - "{{ container_name | default('the_bastion') }}"
+      - "{{ bastion_backup_dir | default('/var/backups/bastion') }}"
+    name: Attach backup volume
+    changed: true
+
+  # Configure container settings
+  - argv:
+      - config
+      - set
+      - "{{ container_name | default('the_bastion') }}"
+      - "user.networks.eth0.host_name={{ container_name | default('the_bastion') }}"
+    name: Set hostname
+    changed: true
+
+  - argv:
+      - config
+      - set
+      - "{{ container_name | default('the_bastion') }}"
+      - "limits.cpu={{ cpu_limit | default('2') }}"
+    name: Set CPU limit
+    changed: true
+
+  - argv:
+      - config
+      - set
+      - "{{ container_name | default('the_bastion') }}"
+      - "limits.memory={{ memory_limit | default('2GiB') }}"
+    name: Set memory limit
+    changed: true
+
+  - argv:
+      - config
+      - set
+      - "{{ container_name | default('the_bastion') }}"
+      - "limits.disk={{ disk_limit | default('10GiB') }}"
+    name: Set disk limit
+    changed: true
+
+  # Configure SSH access
+  - argv:
+      - config
+      - device
+      - add
+      - "{{ container_name | default('the_bastion') }}"
+      - ssh
+      - proxy
+      - listen=tcp:0.0.0.0:{{ bastion_ssh_port | default('2222') }}
+      - connect=tcp:127.0.0.1:22
+    name: Configure SSH proxy
+    changed: true
+
+  # Start container
+  - argv:
+      - start
+      - "{{ container_name | default('the_bastion') }}"
+    name: Start container
+    changed: true
+
+  # Wait for container to be running
+  - argv:
+      - wait
+      - "{{ container_name | default('the_bastion') }}"
+      - --condition
+      - running
+      - --timeout
+      - "30"
+    name: Wait for running state
+    changed: false

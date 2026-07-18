@@ -1,0 +1,286 @@
+---
+# Test playbook for The Bastion deployment using fake Incus
+# This playbook uses the fake Incus binary for testing without requiring real Incus
+
+- name: Test The Bastion deployment with fake Incus
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  
+  vars:
+    # Container configuration
+    container_name: "test_bastion"
+    container_image: "docker:the-bastion/the-bastion:latest"
+    
+    # Storage configuration
+    storage_pool: "default"
+    data_volume: "test_bastion_data"
+    logs_volume: "test_bastion_logs"
+    backup_volume: "test_bastion_backup"
+    
+    # Network configuration
+    network_name: "test_bastion_net"
+    network_type: "bridge"
+    network_ipv4: "192.168.1.100/24"
+    network_gateway: "192.168.1.1"
+    
+    # Resource limits
+    cpu_limit: "1"
+    memory_limit: "1GiB"
+    disk_limit: "5GiB"
+    
+    # The Bastion specific configuration
+    bastion_admin_user: "bastion-admin"
+    bastion_ssh_port: "2222"
+    bastion_data_dir: "/var/lib/bastion"
+    bastion_logs_dir: "/var/log/bastion"
+    bastion_backup_dir: "/var/backups/bastion"
+    
+  tasks:
+    - name: Ensure fake Incus is available
+      ansible.builtin.command: which fake_incus
+      register: fake_incus_check
+      ignore_errors: true
+      changed_when: false
+      
+    - name: Set up fake Incus environment
+      ansible.builtin.file:
+        path: /usr/local/bin/fake_incus
+        state: directory
+        mode: '0755'
+      when: fake_incus_check.failed
+      
+    - name: Copy fake Incus script
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../tests/integration/fake_incus.py"
+        dest: /usr/local/bin/fake_incus
+        mode: '0755'
+      when: fake_incus_check.failed
+      
+    - name: Create log directory for fake Incus
+      ansible.builtin.file:
+        path: /tmp/incus_fake_logs
+        state: directory
+        mode: '0755'
+      
+    - name: Set INCUS_FAKE_LOG_DIR environment variable
+      ansible.builtin.set_fact:
+        incus_fake_log_dir: /tmp/incus_fake_logs
+      
+    - name: Test fake Incus version
+      ansible.builtin.command: fake_incus version
+      register: version_test
+      changed_when: false
+      
+    - name: Display version test result
+      ansible.builtin.debug:
+        var: version_test
+      
+    - name: Deploy The Bastion container using incus_cli module
+      my_namespace.incus.incus_cli:
+        incus:
+          # Create storage volumes
+          - argv:
+              - storage
+              - volume
+              - create
+              - "{{ storage_pool }}"
+              - "{{ data_volume }}"
+              - --type
+              - filesystem
+              - size={{ disk_limit }}
+            name: Create data volume
+            changed: true
+          
+          - argv:
+              - storage
+              - volume
+              - create
+              - "{{ storage_pool }}"
+              - "{{ logs_volume }}"
+              - --type
+              - filesystem
+              - size=1GiB
+            name: Create logs volume
+            changed: true
+          
+          - argv:
+              - storage
+              - volume
+              - create
+              - "{{ storage_pool }}"
+              - "{{ backup_volume }}"
+              - --type
+              - filesystem
+              - size=1GiB
+            name: Create backup volume
+            changed: true
+          
+          # Create network
+          - argv:
+              - network
+              - create
+              - "{{ network_name }}"
+              - --type
+              - "{{ network_type }}"
+              - ipv4.address="{{ network_ipv4 }}"
+              - ipv4.gateway="{{ network_gateway }}"
+            name: Create network
+            changed: true
+          
+          # Launch container
+          - argv:
+              - launch
+              - "{{ container_image }}"
+              - "{{ container_name }}"
+              - --profile
+              - default
+              - --storage
+              - "{{ storage_pool }}"
+              - -c
+              - "limits.cpu={{ cpu_limit }}"
+              - -c
+              - "limits.memory={{ memory_limit }}"
+              - -d
+              - "root,size=5GiB"
+              - -n
+              - "{{ network_name }}"
+            name: Launch container
+            changed: true
+          
+          # Attach volumes
+          - argv:
+              - storage
+              - volume
+              - attach
+              - "{{ storage_pool }}"
+              - "{{ data_volume }}"
+              - "{{ container_name }}"
+              - "{{ bastion_data_dir }}"
+            name: Attach data volume
+            changed: true
+          
+          - argv:
+              - storage
+              - volume
+              - attach
+              - "{{ storage_pool }}"
+              - "{{ logs_volume }}"
+              - "{{ container_name }}"
+              - "{{ bastion_logs_dir }}"
+            name: Attach logs volume
+            changed: true
+          
+          - argv:
+              - storage
+              - volume
+              - attach
+              - "{{ storage_pool }}"
+              - "{{ backup_volume }}"
+              - "{{ container_name }}"
+              - "{{ bastion_backup_dir }}"
+            name: Attach backup volume
+            changed: true
+          
+          # Configure container
+          - argv:
+              - config
+              - set
+              - "{{ container_name }}"
+              - "user.networks.eth0.host_name={{ container_name }}"
+            name: Set hostname
+            changed: true
+          
+          - argv:
+              - config
+              - set
+              - "{{ container_name }}"
+              - "limits.cpu={{ cpu_limit }}"
+            name: Set CPU limit
+            changed: true
+          
+          - argv:
+              - config
+              - set
+              - "{{ container_name }}"
+              - "limits.memory={{ memory_limit }}"
+            name: Set memory limit
+            changed: true
+          
+          - argv:
+              - config
+              - set
+              - "{{ container_name }}"
+              - "limits.disk={{ disk_limit }}"
+            name: Set disk limit
+            changed: true
+          
+          # Configure SSH
+          - argv:
+              - config
+              - device
+              - add
+              - "{{ container_name }}"
+              - ssh
+              - proxy
+              - listen=tcp:0.0.0.0:{{ bastion_ssh_port }}
+              - connect=tcp:127.0.0.1:22
+            name: Configure SSH proxy
+            changed: true
+          
+          # Start container
+          - argv:
+              - start
+              - "{{ container_name }}"
+            name: Start container
+            changed: true
+          
+          # Wait for container
+          - argv:
+              - wait
+              - "{{ container_name }}"
+              - --condition
+              - running
+              - --timeout
+              - "5"
+            name: Wait for running state
+            changed: false
+      register: deployment_result
+      
+    - name: Display deployment results
+      ansible.builtin.debug:
+        var: deployment_result
+        verbosity: 1
+      
+    - name: Verify container was created
+      ansible.builtin.command: fake_incus list --format json
+      register: container_list
+      changed_when: false
+      
+    - name: Parse container list
+      ansible.builtin.set_fact:
+        containers: "{{ container_list.stdout | from_json | default([]) }}"
+      
+    - name: Check if our container exists
+      ansible.builtin.assert:
+        that:
+          - containers | length > 0
+          - container_name in containers | map(attribute='name') | list
+        fail_msg: "Container {{ container_name }} was not created"
+      when: containers is defined
+      
+    - name: Display container list
+      ansible.builtin.debug:
+        var: containers
+      
+    - name: Verify fake Incus logs
+      ansible.builtin.command: cat /tmp/incus_fake_logs/commands.jsonl
+      register: incus_logs
+      ignore_errors: true
+      changed_when: false
+      
+    - name: Display Incus command logs
+      ansible.builtin.debug:
+        var: incus_logs.stdout_lines
+        verbosity: 1
+      when: incus_logs.stdout is defined
