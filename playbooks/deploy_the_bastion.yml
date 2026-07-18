@@ -38,11 +38,11 @@
     bastion_backup_dir: /var/backups/bastion
     
     # Security settings
-    bastion_ssh_key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
+    bastion_ssh_key: "{{ lookup('file', '~/.ssh/id_rsa.pub') | default('') }}"
     
   tasks:
     - name: Ensure storage pool exists
-      my_namespace.incus.incus_cli:
+      incus_cli:
         incus:
           - argv:
               - storage
@@ -54,7 +54,7 @@
       ignore_errors: true
       
     - name: Create storage pool if it doesn't exist
-      my_namespace.incus.incus_cli:
+      incus_cli:
         incus:
           - argv:
               - storage
@@ -65,7 +65,7 @@
       when: storage_check.failed or storage_check.stdout == ""
       
     - name: Create data volume for The Bastion
-      my_namespace.incus.incus_cli:
+      incus_cli:
         incus:
           - argv:
               - storage
@@ -78,7 +78,7 @@
               - size=5GiB
       
     - name: Create logs volume for The Bastion
-      my_namespace.incus.incus_cli:
+      incus_cli:
         incus:
           - argv:
               - storage
@@ -91,7 +91,7 @@
               - size=2GiB
       
     - name: Create backup volume for The Bastion
-      my_namespace.incus.incus_cli:
+      incus_cli:
         incus:
           - argv:
               - storage
@@ -104,7 +104,7 @@
               - size=3GiB
       
     - name: Ensure network exists
-      my_namespace.incus.incus_cli:
+      incus_cli:
         incus:
           - argv:
               - network
@@ -116,7 +116,7 @@
       ignore_errors: true
       
     - name: Create network for The Bastion
-      my_namespace.incus.incus_cli:
+      incus_cli:
         incus:
           - argv:
               - network
@@ -130,7 +130,7 @@
       when: network_check.failed or network_check.stdout == ""
       
     - name: Pull The Bastion Docker image
-      my_namespace.incus.incus_cli:
+      incus_cli:
         incus:
           - argv:
               - image
@@ -140,7 +140,7 @@
             name: Pull The Bastion image
       
     - name: Check if The Bastion container already exists
-      my_namespace.incus.incus_cli:
+      incus_cli:
         incus:
           - argv:
               - list
@@ -151,7 +151,7 @@
       ignore_errors: true
       
     - name: Create and start The Bastion container
-      my_namespace.incus.incus_cli:
+      incus_cli:
         incus:
           - argv:
               - launch
@@ -177,7 +177,7 @@
       when: container_check.failed or container_check.stdout == ""
       
     - name: Attach data volume to container
-      my_namespace.incus.incus_cli:
+      incus_cli:
         incus:
           - argv:
               - storage
@@ -190,7 +190,7 @@
             name: Attach data volume
       
     - name: Attach logs volume to container
-      my_namespace.incus.incus_cli:
+      incus_cli:
         incus:
           - argv:
               - storage
@@ -203,7 +203,7 @@
             name: Attach logs volume
       
     - name: Attach backup volume to container
-      my_namespace.incus.incus_cli:
+      incus_cli:
         incus:
           - argv:
               - storage
@@ -216,7 +216,7 @@
             name: Attach backup volume
       
     - name: Configure container for The Bastion
-      my_namespace.incus.incus_cli:
+      incus_cli:
         incus:
           - argv:
               - config
@@ -247,7 +247,7 @@
             name: Configure backup mount
       
     - name: Set resource limits on container
-      my_namespace.incus.incus_cli:
+      incus_cli:
         incus:
           - argv:
               - config
@@ -271,7 +271,7 @@
             name: Set disk limit
       
     - name: Configure SSH access to The Bastion
-      my_namespace.incus.incus_cli:
+      incus_cli:
         incus:
           - argv:
               - config
@@ -285,7 +285,7 @@
             name: Configure SSH proxy
       
     - name: Start The Bastion container
-      my_namespace.incus.incus_cli:
+      incus_cli:
         incus:
           - argv:
               - start
@@ -293,7 +293,7 @@
             name: Start container
       
     - name: Wait for container to be running
-      my_namespace.incus.incus_cli:
+      incus_cli:
         incus:
           - argv:
               - wait
@@ -306,7 +306,7 @@
             changed: false
       
     - name: Verify container is running
-      my_namespace.incus.incus_cli:
+      incus_cli:
         incus:
           - argv:
               - list
@@ -323,7 +323,7 @@
         verbosity: 1
       
     - name: Configure The Bastion application (initial setup)
-      my_namespace.incus.incus_cli:
+      incus_cli:
         incus:
           - argv:
               - exec
@@ -335,7 +335,7 @@
             name: Initial configuration
       
     - name: Set up The Bastion admin user
-      my_namespace.incus.incus_cli:
+      incus_cli:
         incus:
           - argv:
               - exec
@@ -347,7 +347,7 @@
             name: Create admin user
       
     - name: Configure SSH key for admin user
-      my_namespace.incus.incus_cli:
+      incus_cli:
         incus:
           - argv:
               - exec
@@ -359,7 +359,7 @@
             name: Configure SSH key
       
     - name: Install The Bastion dependencies
-      my_namespace.incus.incus_cli:
+      incus_cli:
         incus:
           - argv:
               - exec
@@ -371,7 +371,7 @@
             name: Install dependencies
       
     - name: Clone The Bastion repository
-      my_namespace.incus.incus_cli:
+      incus_cli:
         incus:
           - argv:
               - exec
@@ -383,7 +383,7 @@
             name: Clone repository
       
     - name: Install The Bastion
-      my_namespace.incus.incus_cli:
+      incus_cli:
         incus:
           - argv:
               - exec
@@ -395,7 +395,7 @@
             name: Install The Bastion
       
     - name: Configure The Bastion
-      my_namespace.incus.incus_cli:
+      incus_cli:
         incus:
           - argv:
               - exec
@@ -407,7 +407,7 @@
             name: Configure The Bastion
       
     - name: Restart container to apply all configurations
-      my_namespace.incus.incus_cli:
+      incus_cli:
         incus:
           - argv:
               - restart
@@ -415,7 +415,7 @@
             name: Restart container
       
     - name: Final verification - Check container status
-      my_namespace.incus.incus_cli:
+      incus_cli:
         incus:
           - argv:
               - info
