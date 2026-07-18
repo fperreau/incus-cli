@@ -11,10 +11,11 @@
   vars:
     # Container configuration
     container_name: the_bastion
-    container_image: docker:the-bastion/the-bastion:latest
-    
+    container_image: ovhcom/the-bastion:sandbox
+    image_alias: the-bastion
+
     # Storage configuration
-    storage_pool: default
+    storage_pool: local
     data_volume: bastion_data
     logs_volume: bastion_logs
     backup_volume: bastion_backup
@@ -22,8 +23,8 @@
     # Network configuration
     network_name: bastion_net
     network_type: bridge
-    network_ipv4: 192.168.1.100/24
-    network_gateway: 192.168.1.1
+    network_ipv4: 192.168.10.100/24
+#   network_gateway: 192.168.10.1
     
     # Resource limits
     cpu_limit: 2
@@ -31,14 +32,14 @@
     disk_limit: 10GiB
     
     # The Bastion specific configuration
-    bastion_admin_user: bastion-admin
+    bastion_admin_user: perreau
     bastion_ssh_port: 2222
     bastion_data_dir: /var/lib/bastion
     bastion_logs_dir: /var/log/bastion
     bastion_backup_dir: /var/backups/bastion
     
     # Security settings
-    bastion_ssh_key: "{{ lookup('file', '~/.ssh/id_rsa.pub') | default('') }}"
+    bastion_ssh_key: "{{ lookup('file', '~/.ssh/fperreau.pub') | default('') }}"
     
   tasks:
     - name: Ensure storage pool exists
@@ -48,11 +49,13 @@
               - storage
               - list
               - "{{ storage_pool }}"
+              - --format=compact,noheader
+              - --columns=n
             changed: false
             name: Check if storage pool exists
       register: storage_check
       ignore_errors: true
-      
+    
     - name: Create storage pool if it doesn't exist
       incus_cli:
         incus:
@@ -62,8 +65,8 @@
               - "{{ storage_pool }}"
               - dir
               - size=100GiB
-      when: storage_check.failed or storage_check.stdout == ""
-      
+      when: storage_check.failed or storage_check.results[0].stdout == ""
+
     - name: Create data volume for The Bastion
       incus_cli:
         incus:
@@ -110,11 +113,12 @@
               - network
               - list
               - "{{ network_name }}"
+              - --format=compact,noheader
+              - --columns=n
             changed: false
-            name: Check if network exists
       register: network_check
       ignore_errors: true
-      
+
     - name: Create network for The Bastion
       incus_cli:
         incus:
@@ -124,27 +128,29 @@
               - "{{ network_name }}"
               - --type
               - "{{ network_type }}"
-              - ipv4.address="{{ network_ipv4 }}"
-              - ipv4.gateway="{{ network_gateway }}"
+              - ipv4.address={{ network_ipv4 }}
+#             - ipv4.gateway={{ network_gateway }}
               - dns.domain=bastion.local
-      when: network_check.failed or network_check.stdout == ""
-      
+      when: network_check.failed or network_check.results[0].stdout == ""
+    
     - name: Pull The Bastion Docker image
       incus_cli:
         incus:
           - argv:
               - image
               - copy
-              - "{{ container_image }}"
-              - local:
-            name: Pull The Bastion image
-      
+              - "docker:{{ container_image }}"
+              - --alias
+              - "{{ image_alias }}"
+
     - name: Check if The Bastion container already exists
       incus_cli:
         incus:
           - argv:
               - list
               - "{{ container_name }}"
+              - --format=compact,noheader
+              - --columns=n
             changed: false
             name: Check container existence
       register: container_check
@@ -155,7 +161,7 @@
         incus:
           - argv:
               - launch
-              - "{{ container_image }}"
+              - "docker:{{ container_image }}"
               - "{{ container_name }}"
               - --profile
               - default
@@ -173,8 +179,7 @@
               - "{{ network_name }}"
               - --eth0
               - "ipv4.address={{ network_ipv4.split('/')[0] }}"
-            name: Launch The Bastion container
-      when: container_check.failed or container_check.stdout == ""
+      when: container_check.failed or container_check.results[0].stdout == ""
       
     - name: Attach data volume to container
       incus_cli:
