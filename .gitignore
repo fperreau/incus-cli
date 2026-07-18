@@ -1,12 +1,66 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.env
 .venv
-.ansible
-.config
-*.pyc
-*.iso
-*.zip
-*.tgz
-*.log
-img
-build
-output-*
-packer_cache
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+.DS_Store
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+.nox/
+.mypy_cache/
+.hypothesis/
+
+# Ansible
+ansible-navigator.log
+ansible.log
+*.retry
+*.tmp
+
+# Molecule
+.molecule/
+
+# Local configuration
+ansible.cfg
+inventory/
+group_vars/
+host_vars/

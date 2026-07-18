@@ -1,403 +1,215 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-Fake Incus CLI for testing purposes.
-This script simulates the Incus CLI behavior without requiring
-a real Incus installation.
+Faux binaire Incus pour les tests d'intégration
+
+Ce script simule le comportement du binaire `incus` réel pour permettre
+des tests sans nécessiter une installation réelle d'Incus.
+
+Usage:
+    1. Placer ce script dans le PATH avant le vrai binaire incus
+    2. Le script registre toutes les commandes exécutées
+    3. Il peut simuler différents comportements selon les arguments
 """
 
 import sys
 import json
 import os
 import time
+import argparse
 from datetime import datetime
 
 
-def log_command(args):
-    """Log the command to a file for verification."""
-    log_dir = os.environ.get('INCUS_FAKE_LOG_DIR', '/tmp/incus_fake_logs')
-    os.makedirs(log_dir, exist_ok=True)
-    
-    log_file = os.path.join(log_dir, 'commands.jsonl')
-    
-    command_record = {
-        'timestamp': datetime.now().isoformat(),
+# Fichier pour stocker les appels
+LOG_FILE = os.environ.get('FAKE_INCUS_LOG', '/tmp/fake_incus_calls.jsonl')
+
+
+def log_call(args, stdout=None, stderr=None, rc=0):
+    """Enregistre un appel dans le fichier de log"""
+    call_record = {
+        'timestamp': datetime.utcnow().isoformat(),
         'argv': args,
-        'pid': os.getpid()
+        'stdout': stdout or '',
+        'stderr': stderr or '',
+        'rc': rc
     }
     
-    with open(log_file, 'a') as f:
-        f.write(json.dumps(command_record) + '\n')
+    # Écrire en JSON Lines
+    with open(LOG_FILE, 'a') as f:
+        f.write(json.dumps(call_record) + '\n')
 
 
-def handle_list(args):
-    """Handle 'incus list' command."""
-    # Extract filters and options
-    containers = []
-    format_type = 'table'
+def clear_log():
+    """Efface le fichier de log"""
+    if os.path.exists(LOG_FILE):
+        os.remove(LOG_FILE)
+
+
+def get_command(args):
+    """Récupère la commande principale (sans les options)"""
+    if not args:
+        return None
     
-    i = 1  # Skip 'list'
-    while i < len(args):
-        arg = args[i]
-        if arg == '--format':
-            i += 1
-            if i < len(args):
-                format_type = args[i]
-        elif arg == '--all-projects':
-            pass
-        elif arg == '--project':
-            i += 1
-            if i < len(args):
-                pass  # Filter by project
-        elif not arg.startswith('--'):
-            # This is a container name filter
-            containers.append({
-                'name': arg,
-                'status': 'Running',
-                'type': 'container',
-                'ipv4': '192.168.1.100',
-                'ipv6': '',
-                'state': 'RUNNING'
-            })
-        i += 1
+    # Ignorer les options globales
+    for arg in args:
+        if not arg.startswith('-'):
+            return arg
+    return None
+
+
+def simulate_start(args):
+    """Simule 'incus start'"""
+    # Trouver le nom de l'instance
+    instance_name = None
+    for arg in args[1:]:  # Skip 'start'
+        if not arg.startswith('-') and ':' in arg:
+            instance_name = arg
+            break
+        elif not arg.startswith('-'):
+            instance_name = arg
+            break
     
-    if format_type == 'json':
-        print(json.dumps(containers))
-    elif format_type == 'csv':
-        if containers:
-            print('NAME,STATUS,TYPE,IPV4,IPV6,STATE')
-            for c in containers:
-                print(f"{c['name']},{c['status']},{c['type']},{c['ipv4']},{c['ipv6']},{c['state']}")
-        else:
-            print('NAME,STATUS,TYPE,IPV4,IPV6,STATE')
+    if not instance_name:
+        instance_name = "unknown"
+    
+    stdout = f"Starting instance: {instance_name}"
+    return stdout, None, 0
+
+
+def simulate_stop(args):
+    """Simule 'incus stop'"""
+    # Trouver le nom de l'instance
+    instance_name = None
+    for arg in args[1:]:  # Skip 'stop'
+        if not arg.startswith('-') and ':' in arg:
+            instance_name = arg
+            break
+        elif not arg.startswith('-'):
+            instance_name = arg
+            break
+    
+    if not instance_name:
+        instance_name = "unknown"
+    
+    stdout = f"Stopping instance: {instance_name}"
+    return stdout, None, 0
+
+
+def simulate_list(args):
+    """Simule 'incus list'"""
+    # Générer une liste fictive d'instances
+    instances = [
+        {
+            "name": "web01",
+            "status": "Running",
+            "type": "container",
+            "remote": "prod"
+        },
+        {
+            "name": "db01", 
+            "status": "Running",
+            "type": "container",
+            "remote": "prod"
+        }
+    ]
+    
+    # Vérifier le format
+    format_arg = None
+    for i, arg in enumerate(args[1:]):
+        if arg == '--format' and i + 1 < len(args):
+            format_arg = args[i + 2]
+    
+    if format_arg == 'json':
+        stdout = json.dumps(instances, indent=2)
     else:
-        if containers:
-            print("+--------+---------+----------+--------------+------+-------+")
-            print("| NAME   |  STATE  |   TYPE    |   IPV4       | IPV6 | SNAPS |")
-            print("+--------+---------+----------+--------------+------+-------+")
-            for c in containers:
-                print(f"| {c['name']:6} | RUNNING | container | {c['ipv4']:12} |      | 0     |")
-            print("+--------+---------+----------+--------------+------+-------+")
-        else:
-            print("No containers found")
-
-
-def handle_info(args):
-    """Handle 'incus info' command."""
-    if len(args) > 1 and args[1] != '--help':
-        # Info about a specific container
-        container_name = args[1]
-        print(f"Name: {container_name}")
-        print("Status: RUNNING")
-        print("Type: container")
-        print("Architecture: x86_64")
-        print("PID: 12345")
-        print("IPv4: 192.168.1.100")
-        print("IPv6: -")
-    else:
-        # Server info
-        print("API extensions:")
-        print("API status: active")
-        print("API version: 1.0")
-        print("Auth: trusted")
-        print("Public: false")
-        print("Auth methods: tls")
-        print("Environment:")
-        print("  addresses: []")
-        print("  architectures:")
-        print("  - x86_64")
-        print("  - i686")
-        print("  certificate: |")
-        print("    certificate=...")
-        print("  certificate_fingerprint: abc123...")
-        print("  driver: incus")
-        print("  driver_version: 1.0.0")
-        print("  firewall: xtables")
-        print("  kernel: Linux")
-        print("  kernel_architecture: x86_64")
-        print("  kernel_version: 5.15.0")
-        print("  lxc_features:")
-        print("  - cgroup2")
-        print("  - devpts_fd")
-        print("  os_name: Ubuntu")
-        print("  os_version: 22.04")
-        print("  project: default")
-        print("  server: incus")
-        print("  server_clustered: false")
-        print("  server_name: test-server")
-        print("  server_pid: 1234")
-        print("  server_version: 1.0.0")
-        print("  storage: dir")
-        print("  storage_version: 1")
-
-
-def handle_version(args):
-    """Handle 'incus version' command."""
-    print("Client version: 1.0.0")
-    print("Server version: 1.0.0")
-    print("API version: 1.0")
-
-
-def handle_storage(args):
-    """Handle storage-related commands."""
-    if len(args) < 2:
-        print("Error: Missing storage command")
-        sys.exit(1)
+        # Format table
+        stdout = "NAME\t\tSTATE\t\tTYPE\t\tREMOTE\n"
+        stdout += "web01\t\tRunning\t\tcontainer\t\tprod\n"
+        stdout += "db01\t\tRunning\t\tcontainer\t\tprod\n"
     
-    subcommand = args[1]
-    
-    if subcommand == 'list':
-        print("+---------+--------+------------------+---------+---------+")
-        print("| NAME    | DRIVER |       SOURCE      |  USED BY |  STATE  |")
-        print("+---------+--------+------------------+---------+---------+")
-        print("| default | dir    | /var/lib/incus   | 2       | CREATED |")
-        print("+---------+--------+------------------+---------+---------+")
-    
-    elif subcommand == 'volume':
-        if len(args) < 4:
-            print("Error: Missing volume subcommand")
-            sys.exit(1)
-        
-        volume_subcommand = args[2]
-        
-        if volume_subcommand == 'list':
-            pool = args[3] if len(args) > 3 else 'default'
-            print("+--------+-------------+--------+------------------+---------+")
-            print("| TYPE   |     NAME     |  USED BY |      PATH       |  STATE  |")
-            print("+--------+-------------+--------+------------------+---------+")
-            print("| filesystem | test_data | 0      | /var/lib/incus   | CREATED |")
-            print("| filesystem | test_logs | 0      | /var/lib/incus   | CREATED |")
-            print("+--------+-------------+--------+------------------+---------+")
-        
-        elif volume_subcommand == 'create':
-            if len(args) < 5:
-                print("Error: Missing volume name")
-                sys.exit(1)
-            pool = args[3]
-            volume_name = args[4]
-            print(f"Volume {volume_name} created in pool {pool}")
-        
-        elif volume_subcommand == 'attach':
-            if len(args) < 6:
-                print("Error: Missing arguments for volume attach")
-                sys.exit(1)
-            pool = args[3]
-            volume_name = args[4]
-            container = args[5]
-            path = args[6] if len(args) > 6 else '/'
-            print(f"Volume {volume_name} attached to {container} at {path}")
-    
-    elif subcommand == 'create':
-        if len(args) < 3:
-            print("Error: Missing pool name")
-            sys.exit(1)
-        pool_name = args[2]
-        pool_type = args[3] if len(args) > 3 else 'dir'
-        print(f"Storage pool {pool_name} created with driver {pool_type}")
+    return stdout, None, 0
 
 
-def handle_network(args):
-    """Handle network-related commands."""
-    if len(args) < 2:
-        print("Error: Missing network command")
-        sys.exit(1)
+def simulate_info(args):
+    """Simule 'incus info'"""
+    # Trouver le nom de l'instance
+    instance_name = args[1] if len(args) > 1 else "web01"
     
-    subcommand = args[1]
+    info = {
+        "name": instance_name,
+        "status": "Running",
+        "type": "container",
+        "architecture": "x86_64",
+        "config": {
+            "image.description": "Ubuntu 22.04"
+        }
+    }
     
-    if subcommand == 'list':
-        print("+---------+----------+---------+-------------------+---------+")
-        print("| NAME    |   TYPE   |  USED BY |       IPV4        |  STATE  |")
-        print("+---------+----------+---------+-------------------+---------+")
-        print("| default | bridge   | 2       | 192.168.1.1/24    | CREATED |")
-        print("+---------+----------+---------+-------------------+---------+")
-    
-    elif subcommand == 'create':
-        if len(args) < 3:
-            print("Error: Missing network name")
-            sys.exit(1)
-        network_name = args[2]
-        print(f"Network {network_name} created")
+    stdout = json.dumps(info, indent=2)
+    return stdout, None, 0
 
 
-def handle_launch(args):
-    """Handle 'incus launch' command."""
-    if len(args) < 3:
-        print("Error: Missing image or container name")
-        sys.exit(1)
+def simulate_error(args):
+    """Simule une erreur"""
+    # Trouver la commande
+    command = get_command(args)
     
-    image = args[1]
-    container_name = args[2]
+    if command == 'delete':
+        instance_name = args[1] if len(args) > 1 else "unknown"
+        stderr = f"Error: Instance {instance_name} not found"
+        return None, stderr, 1
     
-    # Extract options
-    options = {}
-    i = 3
-    while i < len(args):
-        arg = args[i]
-        if arg.startswith('--'):
-            if '=' in arg:
-                key, value = arg[2:].split('=', 1)
-                options[key] = value
-            else:
-                options[arg[2:]] = True
-        elif arg.startswith('-') and len(arg) == 2:
-            # Short options
-            key = arg[1:]
-            if i + 1 < len(args) and not args[i + 1].startswith('-'):
-                options[key] = args[i + 1]
-                i += 1
-            else:
-                options[key] = True
-        i += 1
-    
-    print(f"Container {container_name} launched from {image}")
-    print(f"Options: {options}")
-
-
-def handle_start(args):
-    """Handle 'incus start' command."""
-    if len(args) < 2:
-        print("Error: Missing container name")
-        sys.exit(1)
-    
-    for container in args[1:]:
-        print(f"Container {container} started")
-
-
-def handle_stop(args):
-    """Handle 'incus stop' command."""
-    if len(args) < 2:
-        print("Error: Missing container name")
-        sys.exit(1)
-    
-    for container in args[1:]:
-        print(f"Container {container} stopped")
-
-
-def handle_config(args):
-    """Handle 'incus config' command."""
-    if len(args) < 3:
-        print("Error: Missing config subcommand")
-        sys.exit(1)
-    
-    subcommand = args[1]
-    
-    if subcommand == 'set':
-        if len(args) < 4:
-            print("Error: Missing container name or key=value")
-            sys.exit(1)
-        container = args[2]
-        for setting in args[3:]:
-            print(f"Config set for {container}: {setting}")
-    
-    elif subcommand == 'device':
-        if len(args) < 4:
-            print("Error: Missing device subcommand")
-            sys.exit(1)
-        
-        device_subcommand = args[2]
-        
-        if device_subcommand == 'add':
-            if len(args) < 5:
-                print("Error: Missing container or device name")
-                sys.exit(1)
-            container = args[3]
-            device_name = args[4]
-            device_type = args[5] if len(args) > 5 else 'nic'
-            print(f"Device {device_name} ({device_type}) added to {container}")
-            for option in args[6:]:
-                print(f"  Option: {option}")
-
-
-def handle_exec(args):
-    """Handle 'incus exec' command."""
-    if len(args) < 3:
-        print("Error: Missing container name or command")
-        sys.exit(1)
-    
-    container = args[1]
-    # Find the -- separator
-    try:
-        separator_index = args.index('--')
-        command = args[separator_index + 1:]
-    except ValueError:
-        command = args[2:]
-    
-    print(f"Executed in {container}: {' '.join(command)}")
-
-
-def handle_wait(args):
-    """Handle 'incus wait' command."""
-    if len(args) < 2:
-        print("Error: Missing container name")
-        sys.exit(1)
-    
-    container = args[1]
-    condition = 'running'
-    timeout = '30'
-    
-    i = 2
-    while i < len(args):
-        arg = args[i]
-        if arg == '--condition' and i + 1 < len(args):
-            condition = args[i + 1]
-            i += 1
-        elif arg == '--timeout' and i + 1 < len(args):
-            timeout = args[i + 1]
-            i += 1
-        i += 1
-    
-    print(f"Waiting for {container} to be {condition} (timeout: {timeout}s)")
-    time.sleep(0.1)  # Simulate waiting
-    print(f"Container {container} is {condition}")
-
-
-def handle_help(args):
-    """Handle help command."""
-    print("Usage: incus <command> [options]")
-    print("")
-    print("Commands:")
-    print("  list, info, version, launch, start, stop, config, exec, wait")
-    print("  storage, network, image")
-    print("")
-    print("For more information, run: incus <command> --help")
+    return None, "Error: Unknown command or invalid arguments", 1
 
 
 def main():
-    """Main function to handle Incus commands."""
-    # Log the command
-    log_command(sys.argv)
+    """Point d'entrée principal"""
+    args = sys.argv[1:]  # Le premier arg est le nom du script (fake_incus)
     
-    args = sys.argv[1:]
+    # Si le premier argument n'est pas 'incus', c'est qu'on nous appelle directement
+    # On ajoute 'incus' au début
+    if args and args[0] != 'incus':
+        args = ['incus'] + args
     
+    # Log l'appel
+    log_call(args)
+    
+    # Simuler selon la commande
     if not args:
-        handle_help(sys.argv)
-        return
-    
-    command = args[0]
-    
-    # Handle different commands
-    command_handlers = {
-        'list': handle_list,
-        'info': handle_info,
-        'version': handle_version,
-        'storage': handle_storage,
-        'network': handle_network,
-        'launch': handle_launch,
-        'start': handle_start,
-        'stop': handle_stop,
-        'config': handle_config,
-        'exec': handle_exec,
-        'wait': handle_wait,
-        '--help': handle_help,
-        '-h': handle_help,
-        'help': handle_help,
-    }
-    
-    if command in command_handlers:
-        command_handlers[command](args)
-    else:
-        print(f"Error: Unknown command '{command}'")
-        print("Try 'incus --help' for more information")
+        print("Usage: incus <command> [options]")
+        print("Commands: start, stop, list, info, delete")
         sys.exit(1)
+    
+    # Trouver la commande
+    command = get_command(args)
+    
+    # Dispatcher
+    if command == 'start':
+        stdout, stderr, rc = simulate_start(args)
+    elif command == 'stop':
+        stdout, stderr, rc = simulate_stop(args)
+    elif command == 'list':
+        stdout, stderr, rc = simulate_list(args)
+    elif command == 'info':
+        stdout, stderr, rc = simulate_info(args)
+    elif command == 'version':
+        stdout = "Incus 6.0 (fake)"
+        stderr = None
+        rc = 0
+    elif command == 'help':
+        stdout = "Usage: incus <command> [options]\n\nCommands:\n  start, stop, list, info, version"
+        stderr = None
+        rc = 0
+    else:
+        stdout, stderr, rc = simulate_error(args)
+    
+    # Afficher le résultat
+    if stdout:
+        print(stdout)
+    if stderr:
+        print(stderr, file=sys.stderr)
+    
+    sys.exit(rc)
 
 
 if __name__ == '__main__':

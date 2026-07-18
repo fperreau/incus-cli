@@ -1,0 +1,71 @@
+---
+# Scénario Molecule pour tester le module incus_cli
+
+dependency:
+  name: galaxy
+  enabled: false
+  options:
+    # Pas de dépendances pour ce test
+
+Driver:
+  name: docker
+  # options:
+  #   managed: true
+
+lint: |
+  name: yaml
+  enabled: true
+  # options:
+  #   exclude_paths:
+  #     - .venv
+
+platforms:
+  - name: instance
+    image: "quay.io/ansible/molecule:latest"
+    # Pour le développement local, on peut utiliser une image plus légère
+    # image: "python:3.11-slim"
+    pre_build_image: false
+    privileged: true
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+    capabilities:
+      - SYS_ADMIN
+    # Configuration Docker pour permettre l'exécution de systemd
+    command: "/usr/sbin/init"
+    stop_signal: SIGRTMIN+3
+
+provisioner:
+  name: ansible
+  config_options:
+    defaults:
+      # Utiliser le module local
+      library: ${MOLECULE_PROJECT_DIRECTORY}/library
+      action_plugins: ${MOLECULE_PROJECT_DIRECTORY}/action_plugins
+      # Répertoire des templates
+      # templates: ${MOLECULE_PROJECT_DIRECTORY}/templates
+  inventory:
+    host_vars:
+      instance:
+        # Configuration spécifique pour l'hôte
+        ansible_python_interpreter: /usr/bin/python3
+
+verifier:
+  name: ansible
+  options:
+    # Exécuter les vérifications après convergence
+
+scenario:
+  name: default
+  test_sequence:
+    - lint
+    - cleanup
+    - destroy
+    - syntax
+    - create
+    - prepare
+    - converge
+    # - idempotence
+    - side_effect
+    - verify
+    - cleanup
+    - destroy

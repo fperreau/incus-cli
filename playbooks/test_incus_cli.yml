@@ -1,0 +1,72 @@
+---
+- name: Test du module incus_cli
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  
+  tasks:
+    # Test du mode command
+    - name: Démarrer une instance avec le mode rapide
+      incus_cli:
+        command: "incus start web01"
+      register: result_command
+      ignore_errors: yes
+  
+    - name: Afficher le résultat du mode command
+      debug:
+        var: result_command
+    
+    - name: Arrêter une instance avec le mode rapide
+      incus_cli:
+        command: "incus stop web01"
+      ignore_errors: yes
+
+    # Test du mode incus
+    - name: Démarrer puis arrêter une instance avec le mode robuste
+      incus_cli:
+        incus:
+          - name: Démarrer web01
+            argv:
+              - start
+              - web01
+            changed: true
+          - name: Arrêter web01
+            argv:
+              - stop
+              - web01
+            changed: true
+      register: result_incus
+      ignore_errors: yes
+    
+    - name: Afficher le résultat du mode incus
+      debug:
+        var: result_incus
+    
+    # Test du mode shell (avec consentement explicite)
+    - name: Lister les instances avec redirection (mode shell)
+      incus_cli:
+        shell: "incus list --format json > /tmp/incus_list.json"
+        unsafe_shell: true
+      register: result_shell
+      ignore_errors: yes
+    
+    - name: Afficher le résultat du mode shell
+      debug:
+        var: result_shell
+    
+    # Test du mode template (nécessite l'action plugin)
+    # Note: Cela nécessitera que l'action plugin soit correctement configuré
+    - name: Exécuter un scénario depuis un template
+      incus_cli:
+        template: ../templates/instance.yml.j2
+        variables:
+          name: web02
+          state: started
+          remote: prod
+          project: production
+      register: result_template
+      ignore_errors: yes
+    
+    - name: Afficher le résultat du mode template
+      debug:
+        var: result_template

@@ -1,4 +1,4 @@
-# Module Ansible `incus_cli`
+# Collection incus - Module **incus_cli**
 
 > **Note**: Ce projet implémente un module Ansible `incus_cli` comme module standalone dans le repertoire `library/`.
 
