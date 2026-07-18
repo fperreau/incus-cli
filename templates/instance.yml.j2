@@ -1,3 +1,4 @@
+incus:
 - name: "Creer {{ name | default('web01') }}"
   argv: ["init", "images:debian/13", "{{ name | default('web01') }}"]
   changed: true

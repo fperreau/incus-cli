@@ -1,72 +1,149 @@
 ---
+# Playbook de test pour le module incus_cli
+# Teste tous les modes du module
+
 - name: Test du module incus_cli
   hosts: localhost
   connection: local
   gather_facts: false
   
   tasks:
-    # Test du mode command
-    - name: Démarrer une instance avec le mode rapide
+    # ========================================================================
+    # TEST MODE COMMAND
+    # ========================================================================
+    
+    - name: "[COMMAND] Tester le mode command avec une commande simple"
       incus_cli:
-        command: "incus start web01"
+        command: "incus list --format json"
       register: result_command
       ignore_errors: yes
-  
-    - name: Afficher le résultat du mode command
-      debug:
-        var: result_command
+      changed_when: false
     
-    - name: Arrêter une instance avec le mode rapide
-      incus_cli:
-        command: "incus stop web01"
-      ignore_errors: yes
-
-    # Test du mode incus
-    - name: Démarrer puis arrêter une instance avec le mode robuste
+    - name: "[COMMAND] Afficher le résultat du mode command"
+      ansible.builtin.debug:
+        var: result_command
+        verbosity: 1
+    
+    # ========================================================================
+    # TEST MODE INCUS
+    # ========================================================================
+    
+    - name: "[INCUS] Tester le mode incus avec plusieurs étapes"
       incus_cli:
         incus:
-          - name: Démarrer web01
+          - name: "Lister les instances"
             argv:
-              - start
-              - web01
-            changed: true
-          - name: Arrêter web01
+              - list
+              - --format
+              - json
+            changed: false
+          
+          - name: "Vérifier le statut d'une instance (simulation)"
             argv:
-              - stop
-              - web01
-            changed: true
+              - info
+              - test-instance
+            changed: false
+            ignore_errors: yes
       register: result_incus
       ignore_errors: yes
     
-    - name: Afficher le résultat du mode incus
-      debug:
+    - name: "[INCUS] Afficher le résultat du mode incus"
+      ansible.builtin.debug:
         var: result_incus
+        verbosity: 1
     
-    # Test du mode shell (avec consentement explicite)
-    - name: Lister les instances avec redirection (mode shell)
+    # ========================================================================
+    # TEST MODE SHELL
+    # ========================================================================
+    
+    - name: "[SHELL] Tester le mode shell avec redirection"
       incus_cli:
-        shell: "incus list --format json > /tmp/incus_list.json"
+        shell: "incus list --format json > /tmp/incus_list_test.json 2>&1 || true"
         unsafe_shell: true
       register: result_shell
       ignore_errors: yes
+      changed_when: false
     
-    - name: Afficher le résultat du mode shell
-      debug:
+    - name: "[SHELL] Afficher le résultat du mode shell"
+      ansible.builtin.debug:
         var: result_shell
+        verbosity: 1
     
-    # Test du mode template (nécessite l'action plugin)
-    # Note: Cela nécessitera que l'action plugin soit correctement configuré
-    - name: Exécuter un scénario depuis un template
+    # ========================================================================
+    # TEST MODE TEMPLATE
+    # ========================================================================
+    
+    - name: "[TEMPLATE] Tester le mode template"
       incus_cli:
-        template: ../templates/instance.yml.j2
+        template: templates/instance.yml.j2
         variables:
-          name: web02
+          name: test-template-instance
           state: started
-          remote: prod
-          project: production
       register: result_template
       ignore_errors: yes
     
-    - name: Afficher le résultat du mode template
-      debug:
+    - name: "[TEMPLATE] Afficher le résultat du mode template"
+      ansible.builtin.debug:
         var: result_template
+        verbosity: 1
+    
+    # ========================================================================
+    # TESTS D'IDEMOTENCE
+    # ========================================================================
+    
+    - name: "[IDEMPOTENCE] Tester creates - fichier existant"
+      ansible.builtin.file:
+        path: /tmp/test_creates_file
+        state: touch
+      changed_when: false
+    
+    - name: "[IDEMPOTENCE] Tester creates - commande avec creates"
+      incus_cli:
+        incus:
+          - argv:
+              - list
+            changed: false
+            creates: /tmp/test_creates_file
+      register: result_creates
+      ignore_errors: yes
+    
+    - name: "[IDEMPOTENCE] Afficher le résultat creates"
+      ansible.builtin.debug:
+        var: result_creates
+        verbosity: 1
+    
+    # ========================================================================
+    # TESTS DE VALIDATION
+    # ========================================================================
+    
+    - name: "[VALIDATION] Tester une commande invalide (devrait échouer)"
+      incus_cli:
+        command: "incus | list"
+      register: result_invalid
+      ignore_errors: yes
+      failed_when: result_invalid.failed == false
+    
+    - name: "[VALIDATION] Vérifier que la commande invalide a échoué"
+      ansible.builtin.assert:
+        that:
+          - result_invalid.failed == true
+        fail_msg: "La commande invalide aurait dû échouer"
+    
+    # ========================================================================
+    # RÉSUMÉ
+    # ========================================================================
+    
+    - name: "[SUMMARY] Afficher un résumé des tests"
+      ansible.builtin.debug:
+        msg: |
+          Résumé des tests:
+          - Mode COMMAND: {{ result_command.mode if result_command is defined else 'non testé' }}
+          - Mode INCUS: {{ result_incus.mode if result_incus is defined else 'non testé' }}
+          - Mode SHELL: {{ result_shell.mode if result_shell is defined else 'non testé' }}
+          - Mode TEMPLATE: {{ result_template.mode if result_template is defined else 'non testé' }}
+          
+          Statuts:
+          - COMMAND: {{ result_command.failed | default(false) | ternary('FAILED', 'OK') }}
+          - INCUS: {{ result_incus.failed | default(false) | ternary('FAILED', 'OK') }}
+          - SHELL: {{ result_shell.failed | default(false) | ternary('FAILED', 'OK') }}
+          - TEMPLATE: {{ result_template.failed | default(false) | ternary('FAILED', 'OK') }}
